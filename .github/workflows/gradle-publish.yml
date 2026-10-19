@@ -42,12 +42,35 @@ jobs:
           gradle-version: '8.9'
           dependency-graph: disabled
 
+      - name: Locate Android project
+        id: project
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETTINGS_FILE="$(find . -type f -name settings.gradle -not -path '*/.gradle/*' -not -path '*/build/*' | head -n 1)"
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: settings.gradle tidak ditemukan. Pastikan file proyek Android diunggah ke repositori."
+            exit 1
+          fi
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERROR: Tidak ditemukan app/build.gradle di $PROJECT_DIR"
+            echo "Isi folder proyek:"
+            find "$PROJECT_DIR" -maxdepth 3 -type f | sort | head -n 100
+            exit 1
+          fi
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Project directory: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+          ls -la "$PROJECT_DIR/app"
+
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: gradle --no-daemon :app:assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: KIMPUL-TWEAKS-v2-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
