@@ -42,27 +42,86 @@ jobs:
           gradle-version: '8.9'
           dependency-graph: disabled
 
+      - name: Repair flat Android project layout if needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f app/build.gradle ] && [ -f AndroidManifest.xml ] && [ -f MainActivity.java ]; then
+            echo "Detected flat project layout; creating Android app module..."
+            mkdir -p app/src/main/java/id/kimpul/tweaks
+            cp AndroidManifest.xml app/src/main/AndroidManifest.xml
+            cp MainActivity.java app/src/main/java/id/kimpul/tweaks/MainActivity.java
+            cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+            cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "KIMPUL_TWEAKS_V2"
+          include(":app")
+          EOF
+            cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'id.kimpul.tweaks'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'id.kimpul.tweaks'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 2
+                  versionName '2.0.0'
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+              implementation 'dev.rikka.shizuku:api:13.1.5'
+          }
+          EOF
+          fi
+          echo "Project root files:"
+          ls -la
+          echo "App module files:"
+          find app -maxdepth 6 -type f | sort || true
+
       - name: Locate Android project
         id: project
         shell: bash
         run: |
           set -euo pipefail
-          SETTINGS_FILE="$(find . -type f -name settings.gradle -not -path '*/.gradle/*' -not -path '*/build/*' | head -n 1)"
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "ERROR: settings.gradle tidak ditemukan. Pastikan file proyek Android diunggah ke repositori."
+          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ]; then
+            echo "ERROR: settings.gradle tidak ditemukan di root repositori."
             exit 1
           fi
-          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERROR: Tidak ditemukan app/build.gradle di $PROJECT_DIR"
-            echo "Isi folder proyek:"
-            find "$PROJECT_DIR" -maxdepth 3 -type f | sort | head -n 100
+          if [ ! -f app/build.gradle ] && [ ! -f app/build.gradle.kts ]; then
+            echo "ERROR: app/build.gradle tidak ditemukan setelah pemeriksaan struktur."
+            find . -maxdepth 5 -type f | sort | head -n 150
             exit 1
           fi
-          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-          echo "Project directory: $PROJECT_DIR"
-          ls -la "$PROJECT_DIR"
-          ls -la "$PROJECT_DIR/app"
+          echo "dir=." >> "$GITHUB_OUTPUT"
 
       - name: Build debug APK
         working-directory: ${{ steps.project.outputs.dir }}
@@ -72,5 +131,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: KIMPUL-TWEAKS-v2-debug
-          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
